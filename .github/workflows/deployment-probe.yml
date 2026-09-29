@@ -1,0 +1,51 @@
+# Reviewable cloud-only test. Not installed in .github/workflows or published yet.
+name: Standalone Naver source probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [deployment-probe]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install isolated browser diagnostic dependencies
+        run: |
+          npm install --no-save --package-lock=false playwright@1.63.0
+          npx playwright install --with-deps --no-shell chromium
+      - name: Direct HTTP diagnostic
+        continue-on-error: true
+        run: node scripts/standalone-source-probe.mjs --mode=http
+      - name: Headless browser diagnostic
+        continue-on-error: true
+        run: node scripts/standalone-source-probe.mjs --mode=browser
+      - name: Browser under virtual display
+        continue-on-error: true
+        env:
+          PEAK_PROBE_REPORT: artifacts/deployment-validation/linux-browser-headed.json
+        run: xvfb-run -a node scripts/standalone-source-probe.mjs --mode=browser --headed
+      - name: Report each outcome
+        if: always()
+        run: |
+          for file in artifacts/deployment-validation/*.json; do
+            echo "$file"
+            cat "$file"
+          done
+      - name: Require a successful standalone browser check
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const dir='artifacts/deployment-validation';
+          const reports=fs.readdirSync(dir).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(fs.readFileSync(`${dir}/${n}`,'utf8')));
+          if(!reports.some(r=>r.mode==='browser'&&r.success===true)){
+            console.error('Cloud browser collection was NOT verified. Inspect the diagnostic JSON reports.');
+            process.exit(1);
+          }
+          console.log('At least one independent cloud browser passed two fresh-session collection rounds. This is not a 24-hour stability test.');
+          JS
