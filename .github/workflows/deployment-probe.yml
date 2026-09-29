@@ -2,8 +2,6 @@
 name: Standalone Naver source probe
 on:
   workflow_dispatch:
-  push:
-    branches: [deployment-probe]
 permissions:
   contents: read
 jobs:
@@ -16,20 +14,16 @@ jobs:
         with:
           node-version: "22"
       - name: Install isolated browser diagnostic dependencies
-        if: github.event_name == 'workflow_dispatch'
         run: |
           npm install --no-save --package-lock=false playwright@1.63.0
           npx playwright install --with-deps --no-shell chromium
       - name: Direct HTTP diagnostic
-        if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: node scripts/standalone-source-probe.mjs --mode=http
       - name: Headless browser diagnostic
-        if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: node scripts/standalone-source-probe.mjs --mode=browser
       - name: Browser under virtual display
-        if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         env:
           PEAK_PROBE_REPORT: artifacts/deployment-validation/linux-browser-headed.json
@@ -45,7 +39,6 @@ jobs:
             cat "$file"
           done
       - name: Require a successful standalone browser check
-        if: github.event_name == 'workflow_dispatch'
         run: |
           node --input-type=module <<'JS'
           import fs from 'node:fs';

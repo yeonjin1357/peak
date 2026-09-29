@@ -100,7 +100,7 @@ try{
   }
  }
  if(mode!=='connectivity')report.success=report.checks.some(c=>c.received>0)&&report.checks.filter(c=>c.district).every(c=>c.complete);
- if(!report.success)report.error={message:'No nonempty complete query observed'};
+ if(!report.success)report.error={message:mode==='connectivity'?'One or more HTTPS controls did not return 200':'No nonempty complete query observed'};
 }catch(e){report.success=false;report.error=errorInfo(e);}
 report.finishedAt=new Date().toISOString();
 mkdirSync(dirname(reportPath),{recursive:true});
