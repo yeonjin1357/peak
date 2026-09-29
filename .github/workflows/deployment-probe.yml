@@ -1,4 +1,4 @@
-# Reviewable cloud-only test. Not installed in .github/workflows or published yet.
+# Standalone diagnostic, kept separate from the application and its data.
 name: Standalone Naver source probe
 on:
   workflow_dispatch:
@@ -16,20 +16,27 @@ jobs:
         with:
           node-version: "22"
       - name: Install isolated browser diagnostic dependencies
+        if: github.event_name == 'workflow_dispatch'
         run: |
           npm install --no-save --package-lock=false playwright@1.63.0
           npx playwright install --with-deps --no-shell chromium
       - name: Direct HTTP diagnostic
+        if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: node scripts/standalone-source-probe.mjs --mode=http
       - name: Headless browser diagnostic
+        if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: node scripts/standalone-source-probe.mjs --mode=browser
       - name: Browser under virtual display
+        if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         env:
           PEAK_PROBE_REPORT: artifacts/deployment-validation/linux-browser-headed.json
         run: xvfb-run -a node scripts/standalone-source-probe.mjs --mode=browser --headed
+      - name: DNS and HTTPS connectivity controls
+        continue-on-error: true
+        run: node scripts/standalone-source-probe.mjs --mode=connectivity
       - name: Report each outcome
         if: always()
         run: |
@@ -38,6 +45,7 @@ jobs:
             cat "$file"
           done
       - name: Require a successful standalone browser check
+        if: github.event_name == 'workflow_dispatch'
         run: |
           node --input-type=module <<'JS'
           import fs from 'node:fs';

@@ -3,10 +3,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import https from 'node:https';
+import {resolve4,resolve6} from 'node:dns/promises';
 const origin='https://fin.land.naver.com';
 const endpoint='/front-api/v1/article/legalDivisionArticleList';
 const mode=process.argv.find(a=>a.startsWith('--mode='))?.split('=')[1] || 'browser';
-if(!['http','browser'].includes(mode)) throw Error('Use --mode=http or --mode=browser');
+if(!['http','browser','connectivity'].includes(mode)) throw Error('Use --mode=http, --mode=browser or --mode=connectivity');
 const headed=process.argv.includes('--headed');
 const reportPath=process.env.PEAK_PROBE_REPORT || `artifacts/deployment-validation/${process.platform}-${mode}${headed?'-headed':''}.json`;
 const report={startedAt:new Date().toISOString(),platform:process.platform,arch:process.arch,node:process.version,mode,headed,networkScope:process.env.GITHUB_ACTIONS==='true'?'GitHub-hosted runner':'local machine network; NOT cloud IP verification',checks:[]};
@@ -49,7 +51,29 @@ async function collect(fetchPage,session){
  }
 }
 try{
- if(mode==='http'){
+ if(mode==='connectivity'){
+  report.dns={};
+  for(const [family,resolve] of [['ipv4',resolve4],['ipv6',resolve6]]){
+   try{report.dns[family]=await resolve('fin.land.naver.com');}catch(e){report.dns[family]=errorInfo(e);}
+  }
+  for(const url of ['https://example.com/','https://www.naver.com/',origin+'/']){
+   const check={url,family:'IPv4',events:[],status:null};report.checks.push(check);
+   await new Promise(done=>{
+    const start=Date.now();
+    const event=(name)=>check.events.push({name,elapsedMs:Date.now()-start});
+    const request=https.get(url,{family:4},response=>{check.status=response.statusCode;event('http-response');response.resume();});
+    const timeout=setTimeout(()=>request.destroy(Error('HTTPS diagnostic timed out after 15000ms')),15000);
+    request.on('socket',socket=>{
+     socket.on('lookup',(error,address)=>{event('dns-resolved');check.address=address;});
+     socket.on('connect',()=>event('tcp-connected'));
+     socket.on('secureConnect',()=>event('tls-established'));
+    });
+    request.on('error',e=>{check.error=errorInfo(e);});
+    request.on('close',()=>{clearTimeout(timeout);check.elapsedMs=Date.now()-start;done();});
+   });
+  }
+  report.success=report.checks.every(c=>c.status===200);
+ }else if(mode==='http'){
   await collect(async body=>{
    const r=await fetch(origin+endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(20000)});
    const data=await r.json().catch(()=>null);return {status:r.status,data};
@@ -75,7 +99,7 @@ try{
    }finally{await browser.close();}
   }
  }
- report.success=report.checks.some(c=>c.received>0)&&report.checks.filter(c=>c.district).every(c=>c.complete);
+ if(mode!=='connectivity')report.success=report.checks.some(c=>c.received>0)&&report.checks.filter(c=>c.district).every(c=>c.complete);
  if(!report.success)report.error={message:'No nonempty complete query observed'};
 }catch(e){report.success=false;report.error=errorInfo(e);}
 report.finishedAt=new Date().toISOString();
